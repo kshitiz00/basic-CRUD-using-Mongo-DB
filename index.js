@@ -3,6 +3,8 @@ import jwt from "jsonwebtoken";
 import { UserModel, TodoModel } from "./db.js";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
+import bcrypt, { hash } from "bcrypt";
+import { z } from "zod";
 
 dotenv.config();
 mongoose.connect(process.env.MONGO_URI);
@@ -27,37 +29,61 @@ const auth = (req, res, next) => {
   }
 };
 app.post("/signup", async (req, res) => {
-  const { email, name, password } = req.body;
-  await UserModel.create({
-    email: email,
-    name: name,
-    password: password,
+  const requiredBody = z.object({
+    email: z.string().min(3).max(100).email(),
+    name: z.string().min(3).max(100),
+    password: z.string().min(3).max(100),
   });
+  const { success, error, data } = requiredBody.safeParse(req.body);
+  if (success) {
+    const { email, name, password } = req.body;
+    const hashedPassword = await bcrypt.hash(password.toString(), 5);
+    console.log(hashedPassword);
+    await UserModel.create({
+      email: email,
+      name: name,
+      password: hashedPassword,
+    });
 
-  res.status(200).json({
-    message: "You are signed up successfully",
-  });
+    res.status(200).json({
+      message: "You are signed up successfully",
+    });
+  } else {
+    res.status(403).json({
+      message: "You are signed up successfully",
+      error: error,
+    });
+  }
 });
 
 app.post("/signin", async (req, res) => {
   const { email, password } = req.body;
   const user = await UserModel.findOne({
     email: email,
-    password: password,
   });
   if (user) {
-    const token = jwt.sign(
-      {
-        id: user._id.toString(),
-      },
-      JWT_SECRET
+    const passwordMatched = await bcrypt.compare(
+      password.toString(),
+      user.password
     );
-    res.status(200).json({
-      token: token,
-    });
+    if (passwordMatched) {
+      const token = jwt.sign(
+        {
+          id: user._id.toString(),
+        },
+        JWT_SECRET
+      );
+      res.status(200).json({
+        token: token,
+      });
+    } else {
+      res.status(403).json({
+        message: "Password Incorrect",
+      });
+    }
   } else {
     res.status(403).json({
-      message: "You are not signed up",
+      message: "You are not Signed Up",
     });
   }
 });
@@ -65,11 +91,7 @@ app.post("/signin", async (req, res) => {
 app.post("/todo", auth, async (req, res) => {
   const userId = req.userId;
   const { title, done } = req.body;
-  await TodoModel.create({
-    title: title,
-    done: done,
-    userId: userId,
-  });
+  await TodoModel.create({});
   res.send({
     message: "Todo Added",
   });
